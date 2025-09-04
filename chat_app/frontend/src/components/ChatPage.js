@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from './Header';
 import '../App.css';
@@ -6,9 +6,14 @@ import { FaPaperPlane } from 'react-icons/fa';
 import SocketIOClient from 'socket.io-client';
 
 const ChatPage = () => {
-  const { username } = useParams();
+  const { room, username } = useParams();
   const [message, setMessage] = useState('');
-  const [chats, setChats] = useState([]);
+  const [chats, setChats] = useState([]); // visible messages (room or private)
+  const [roomMessages, setRoomMessages] = useState([]); // all room messages
+  const [privateMessages, setPrivateMessages] = useState({}); // { otherUser: [msgs] }
+  const [users, setUsers] = useState([]); // other users in room
+  const [mode, setMode] = useState('room'); // 'room' | 'private'
+  const [activeUser, setActiveUser] = useState(null); // recipient when private
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const chatEndRef = useRef(null);
@@ -25,6 +30,7 @@ const ChatPage = () => {
     newSocket.on('connect', () => {
       setConnected(true);
       console.log('Socket connected', newSocket.id);
+      newSocket.emit('joinRoom', { room, username });
     });
 
     newSocket.on('connect_error', (err) => {
@@ -33,8 +39,24 @@ const ChatPage = () => {
     });
 
     newSocket.on('chat', (chatMessage) => {
-      console.log('Received chat message', chatMessage);
-      setChats((prevChats) => [...prevChats, chatMessage]);
+      if (chatMessage.room && chatMessage.room !== room) return;
+      const msg = { ...chatMessage, type: 'user' };
+      setRoomMessages(prev => [...prev, msg]);
+    });
+    newSocket.on('system', (sysMessage) => {
+      if (sysMessage.room && sysMessage.room !== room) return;
+      const msg = { ...sysMessage, type: 'system' };
+      setRoomMessages(prev => [...prev, msg]);
+    });
+    newSocket.on('userList', (list) => {
+      setUsers(list.filter(u => u !== username));
+    });
+    newSocket.on('privateMessage', (payload) => {
+      const other = payload.from === username ? payload.to : payload.from;
+      setPrivateMessages(prev => ({
+        ...prev,
+        [other]: [...(prev[other] || []), payload]
+      }));
     });
 
     newSocket.on('disconnect', (reason) => {
@@ -57,6 +79,20 @@ const ChatPage = () => {
     }
   }, [chats]);
 
+  useEffect(() => {
+    if(mode === 'room') {
+      setChats(roomMessages);
+    } else if (mode === 'private' && activeUser){
+      setChats(privateMessages[activeUser] || []);
+    }
+  }, [mode, activeUser, roomMessages, privateMessages]);
+
+  const startPrivate = useCallback((user) => {
+    setMode('private');
+    setActiveUser(user);
+  }, []);
+  const backToRoom = () => { setMode('room'); setActiveUser(null); };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!socket) {
@@ -68,11 +104,15 @@ const ChatPage = () => {
       return;
     }
     if (message.trim()) {
-      const payload = { sender: username, message };
-      console.log('Emitting chat', payload);
-      socket.emit('chat', payload, (ack) => {
-        console.log('Ack from server (if any):', ack);
-      });
+      if(mode === 'room') {
+        const payload = { sender: username, message, room };
+        console.log('Emitting room chat', payload);
+        socket.emit('chat', payload);
+      } else if(mode === 'private' && activeUser) {
+        const payload = { from: username, to: activeUser, message };
+        console.log('Emitting private message', payload);
+        socket.emit('privateMessage', payload);
+      }
       setMessage('');
     }
   };
@@ -81,19 +121,49 @@ const ChatPage = () => {
     <main>
       <Header />
       <Link to='/' className='logout-link'>LOGOUT</Link>
-      <div style={{padding: '4px 12px', fontSize: '0.8rem', color: connected ? 'green' : 'red'}}>
-        Status: {connected ? 'Connected' : 'Disconnected'} {socket && socket.id ? `(id: ${socket.id})` : ''}
+      <div style={{padding: '4px 12px', fontSize: '0.8rem', color: connected ? 'green' : 'red', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+        <span>Status: {connected ? 'Connected' : 'Disconnected'} {socket && socket.id ? `(id: ${socket.id})` : ''}</span>
+        <span style={{color:'#ccc'}}>Room: {room}</span>
       </div>
-      <div className='chat-container'>
-        {chats.map((chat, index) => (
-          <div key={index} className={chat.sender === username ? 'my-chat' : 'notmy-chat'}>
-            <p>
-              <span className='user'>{chat.sender === username ? `You: ${username}` : `User: ${chat.sender}`}</span>
-              <span className='msg'>{chat.message}</span>
-            </p>
+      <div className='chat-layout'>
+        <aside className='sidebar'>
+          <div className='sidebar-header'>
+            <strong>{username}</strong>
+            <div style={{marginTop:4, fontSize:'0.7rem'}}>Mode: {mode === 'room' ? 'Room' : `Private (${activeUser})`}</div>
           </div>
-        ))}
-        <div ref={chatEndRef} />
+          <div className='sidebar-section'>
+            <button type='button' className='sidebar-btn' onClick={backToRoom} disabled={mode==='room'}># {room}</button>
+          </div>
+          <div className='sidebar-section users'>
+            <div className='section-title'>Users</div>
+            {users.length === 0 && <div className='empty'>No others</div>}
+            {users.map(u => (
+              <button type='button' key={u} className={`user-btn ${activeUser===u && mode==='private' ? 'active' : ''}`} onClick={() => startPrivate(u)}>{u}</button>
+            ))}
+          </div>
+        </aside>
+        <div className='chat-container'>
+          {chats.map((chat, index) => {
+            if (chat.type === 'system') {
+              return (
+                <div key={index} className='system-chat'>
+                  <p><em>{chat.message}</em></p>
+                </div>
+              );
+            }
+            const isMine = chat.sender === username || chat.from === username;
+            const sender = chat.sender || chat.from;
+            return (
+              <div key={index} className={isMine ? 'my-chat' : 'notmy-chat'}>
+                <p>
+                  <span className='user'>{isMine ? `You: ${username}` : `User: ${sender}`}{chat.type==='private' && ' (private)'}</span>
+                  <span className='msg'>{chat.message}</span>
+                </p>
+              </div>
+            );
+          })}
+          <div ref={chatEndRef} />
+        </div>
       </div>
       <div className='chatbox-container'>
         <div className='chatbox'>
