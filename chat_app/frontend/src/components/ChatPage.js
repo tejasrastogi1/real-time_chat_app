@@ -13,10 +13,33 @@ const ChatPage = () => {
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-    const newSocket = SocketIOClient('http://localhost:3000');
+  // Connect to backend on port 5000 (separate from React dev server 3000)
+    const newSocket = SocketIOClient('http://localhost:5000', {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      timeout: 10000,
+    });
     setSocket(newSocket);
+
+    newSocket.on('connect', () => {
+      console.log('Socket connected', newSocket.id);
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Socket connect error:', err.message);
+    });
+
     newSocket.on('chat', (chatMessage) => {
+      console.log('Received chat message', chatMessage);
       setChats((prevChats) => [...prevChats, chatMessage]);
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.warn('Socket disconnected:', reason);
+    });
+
+    newSocket.on('reconnect_attempt', (attempt) => {
+      console.log('Reconnect attempt', attempt);
     });
 
     return () => {
@@ -32,7 +55,7 @@ const ChatPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (message.trim()) {
+    if (message.trim() && socket && socket.connected) {
       socket.emit('chat', { sender: username, message });
       setMessage('');
     }

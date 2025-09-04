@@ -1,20 +1,21 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../App.css';
 import { Link } from 'react-router-dom';
 import Header from './Header';
 
 const Login = () => {
   const [username, setUsername] = useState('');
+  const navigate = useNavigate();
 
   const handleLogin = (e) => {
     e.preventDefault();
-
-    if (username.trim() !== '') {
-      localStorage.setItem('username', username);
-    } else {
+    if (username.trim() === '') {
       alert('Please enter a username!');
       return;
     }
+    localStorage.setItem('username', username.trim());
+    navigate(`/chat/${username.trim()}`);
   };
 
   return (
@@ -29,9 +30,7 @@ const Login = () => {
             onChange={(e) => setUsername(e.target.value)}
             required
           />
-          <Link to={username.trim() !== '' ? `/chat/${username}` : '/'} >
-            <button className='login-link'>LOGIN</button>
-          </Link>
+          <button type='submit' className='login-link'>LOGIN</button>
         </form>
       </div>
       </main>
