@@ -6,6 +6,7 @@ import Header from './Header';
 
 const Login = () => {
   const [username, setUsername] = useState('');
+  const [room, setRoom] = useState('general');
   const navigate = useNavigate();
 
   const handleLogin = (e) => {
@@ -14,8 +15,9 @@ const Login = () => {
       alert('Please enter a username!');
       return;
     }
-    localStorage.setItem('username', username.trim());
-    navigate(`/chat/${username.trim()}`);
+  localStorage.setItem('username', username.trim());
+  localStorage.setItem('room', room.trim());
+  navigate(`/chat/${room.trim()}/${username.trim()}`);
   };
 
   return (
@@ -30,7 +32,15 @@ const Login = () => {
             onChange={(e) => setUsername(e.target.value)}
             required
           />
-          <button type='submit' className='login-link'>LOGIN</button>
+          <input
+            style={{ marginLeft: '10px' }}
+            type='text'
+            placeholder='Room (e.g. general)'
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            required
+          />
+          <button style={{ marginLeft: '10px' }} type='submit' className='login-link'>JOIN</button>
         </form>
       </div>
       </main>

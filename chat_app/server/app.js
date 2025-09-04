@@ -30,19 +30,34 @@ function broadcastUsers(room){
     for (const [,u] of users.entries()) {
         if (u.room === room) list.push(u.username);
     }
+    console.log(`[broadcastUsers] room=${room} users=${JSON.stringify(list)}`);
     io.to(room).emit('userList', list);
 }
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
 
-    socket.on('joinRoom', ({ room, username }) => {
+    socket.on('joinRoom', ({ room, username }, cb) => {
         if (!room || !username) return;
         socket.join(room);
         users.set(socket.id, { username, room });
         console.log(`Socket ${socket.id} (${username}) joined room ${room}`);
         socket.to(room).emit('system', { type: 'system', message: `${username} joined`, room });
         broadcastUsers(room);
+        if (cb) {
+            // compute list after join
+            const list = [];
+            for (const [,u] of users.entries()) if (u.room === room) list.push(u.username);
+            cb({ users: list });
+        }
+    });
+
+    // Explicit user list fetch
+    socket.on('getUsers', (roomName, cb) => {
+        const list = [];
+        for (const [,u] of users.entries()) if (u.room === roomName) list.push(u.username);
+        console.log(`[getUsers] room=${roomName} => ${JSON.stringify(list)}`);
+        if (cb) cb({ users: list });
     });
 
     socket.on('chat', (data, ack) => {

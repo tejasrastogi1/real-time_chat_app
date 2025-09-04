@@ -4,7 +4,7 @@ import '../App.css';
 const Header = () => {
   return (
     <div className='head'>
-    <img className='icon' src='../logo.png' alt="Chatify Logo" />
+    <img className='icon' src='/logo.png' alt="Chatify Logo" />
     <h1>Chatify</h1>
   </div>  
   )

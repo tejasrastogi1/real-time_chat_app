@@ -16,6 +16,7 @@ const ChatPage = () => {
   const [activeUser, setActiveUser] = useState(null); // recipient when private
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [pollAttempts, setPollAttempts] = useState(0);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -30,7 +31,6 @@ const ChatPage = () => {
     newSocket.on('connect', () => {
       setConnected(true);
       console.log('Socket connected', newSocket.id);
-      newSocket.emit('joinRoom', { room, username });
     });
 
     newSocket.on('connect_error', (err) => {
@@ -49,7 +49,8 @@ const ChatPage = () => {
       setRoomMessages(prev => [...prev, msg]);
     });
     newSocket.on('userList', (list) => {
-      setUsers(list.filter(u => u !== username));
+  console.log('userList event received', list);
+  setUsers(list.filter(u => u !== username));
     });
     newSocket.on('privateMessage', (payload) => {
       const other = payload.from === username ? payload.to : payload.from;
@@ -72,6 +73,37 @@ const ChatPage = () => {
       newSocket.close();
     };
   }, [setSocket]);
+
+  // Emit joinRoom only after listeners are mounted & socket connected
+  useEffect(() => {
+    if (socket && connected) {
+      console.log('Emitting joinRoom now');
+      socket.emit('joinRoom', { room, username }, (data) => {
+        if (data?.users) {
+          setUsers(data.users.filter(u => u !== username));
+          console.log('Initial users list', data.users);
+        }
+      });
+    }
+  }, [socket, connected, room, username]);
+
+  // Poll for users if none appear (helps in case first broadcast was missed)
+  useEffect(() => {
+    if (!socket || !connected) return;
+    if (users.length > 0) return; // have users
+    if (pollAttempts >= 5) return; // stop after 5 tries
+    const id = setTimeout(() => {
+      console.log('Polling for users attempt', pollAttempts + 1);
+      socket.emit('getUsers', room, (data) => {
+        if (data?.users) {
+          console.log('getUsers response', data.users);
+          setUsers(data.users.filter(u => u !== username));
+        }
+      });
+      setPollAttempts(a => a + 1);
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [socket, connected, users.length, pollAttempts, room, username]);
 
   useEffect(() => {
     if (chatEndRef.current) {
