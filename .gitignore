@@ -1,0 +1,26 @@
+# Dependencies
+**/node_modules/
+
+# Build outputs
+**/build/
+**/dist/
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/
+*.swp
+
+# Cache
+**/.cache/
+**/coverage/
+
+# Env
+.env
+.env.local
+
+# Misc
+.DS_Store
+Thumbs.db

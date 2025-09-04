@@ -10,10 +10,11 @@ const ChatPage = () => {
   const [message, setMessage] = useState('');
   const [chats, setChats] = useState([]);
   const [socket, setSocket] = useState(null);
+  const [connected, setConnected] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-  // Connect to backend on port 5000 (separate from React dev server 3000)
+    // Connect to backend on port 5000 (separate from React dev server 3000)
     const newSocket = SocketIOClient('http://localhost:5000', {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
@@ -22,10 +23,12 @@ const ChatPage = () => {
     setSocket(newSocket);
 
     newSocket.on('connect', () => {
+      setConnected(true);
       console.log('Socket connected', newSocket.id);
     });
 
     newSocket.on('connect_error', (err) => {
+      setConnected(false);
       console.error('Socket connect error:', err.message);
     });
 
@@ -35,6 +38,7 @@ const ChatPage = () => {
     });
 
     newSocket.on('disconnect', (reason) => {
+      setConnected(false);
       console.warn('Socket disconnected:', reason);
     });
 
@@ -55,8 +59,20 @@ const ChatPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (message.trim() && socket && socket.connected) {
-      socket.emit('chat', { sender: username, message });
+    if (!socket) {
+      console.warn('No socket yet, ignoring submit');
+      return;
+    }
+    if (!socket.connected) {
+      console.warn('Socket not connected, cannot send');
+      return;
+    }
+    if (message.trim()) {
+      const payload = { sender: username, message };
+      console.log('Emitting chat', payload);
+      socket.emit('chat', payload, (ack) => {
+        console.log('Ack from server (if any):', ack);
+      });
       setMessage('');
     }
   };
@@ -65,6 +81,9 @@ const ChatPage = () => {
     <main>
       <Header />
       <Link to='/' className='logout-link'>LOGOUT</Link>
+      <div style={{padding: '4px 12px', fontSize: '0.8rem', color: connected ? 'green' : 'red'}}>
+        Status: {connected ? 'Connected' : 'Disconnected'} {socket && socket.id ? `(id: ${socket.id})` : ''}
+      </div>
       <div className='chat-container'>
         {chats.map((chat, index) => (
           <div key={index} className={chat.sender === username ? 'my-chat' : 'notmy-chat'}>
@@ -85,7 +104,7 @@ const ChatPage = () => {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
-            <button type='submit'>
+            <button type='submit' disabled={!connected || !message.trim()}>
               <FaPaperPlane />
             </button>
           </form>
